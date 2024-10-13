@@ -3,6 +3,9 @@ import speech_recognition as sr
 from gtts import gTTS
 import tempfile
 import os
+from azure.ai.inference import ChatCompletionsClient
+from azure.ai.inference.models import AssistantMessage, SystemMessage, UserMessage
+from azure.core.credentials import AzureKeyCredential
 
 # Check if PyAudio is available
 try:
@@ -10,6 +13,22 @@ try:
     PYAUDIO_AVAILABLE = True
 except ImportError:
     PYAUDIO_AVAILABLE = False
+
+# Azure AI setup
+token = os.environ.get("GITHUB_TOKEN")
+endpoint = "https://models.inference.ai.azure.com"
+model_name = "Llama-3.2-90B-Vision-Instruct"
+
+client = ChatCompletionsClient(
+    endpoint=endpoint,
+    credential=AzureKeyCredential(token),
+)
+
+# Initialize chat history
+if "messages" not in st.session_state:
+    st.session_state.messages = [
+        SystemMessage(content="You are a helpful banking assistant. Provide information about banking services and answer customer queries.")
+    ]
 
 def transcribe_audio(audio_data):
     recognizer = sr.Recognizer()
@@ -33,8 +52,13 @@ def text_to_speech(text):
         return fp.name
 
 def process_query(text):
-    # This is a simple placeholder. Replace with actual banking bot logic later.
-    return f"You asked: '{text}'. This is a placeholder response from the banking bot."
+    st.session_state.messages.append(UserMessage(content=text))
+    
+    response = client.complete(messages=st.session_state.messages, model=model_name)
+    bot_response = response.choices[0].message.content
+    
+    st.session_state.messages.append(AssistantMessage(content=bot_response))
+    return bot_response
 
 st.title("Banking Bot Voice Assistant")
 
@@ -82,4 +106,12 @@ elif input_method == "Live Microphone":
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")
 
-st.write("Note: This is a demo version. The banking bot responses are placeholders.")
+# Display chat history
+st.subheader("Chat History")
+for message in st.session_state.messages[1:]:  # Skip the system message
+    if isinstance(message, UserMessage):
+        st.write(f"You: {message.content}")
+    elif isinstance(message, AssistantMessage):
+        st.write(f"Bot: {message.content}")
+
+st.write("Note: This banking bot is powered by Azure AI.")
